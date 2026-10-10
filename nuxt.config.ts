@@ -583,6 +583,9 @@ export default defineNuxtConfig({
     jwtSecret,
     // Redis配置（可选）
     redisUrl: process.env.REDIS_URL || '',
+    // 自建音乐网关（服务端持账号，游客免登录播放）
+    musicGatewayQq: process.env.MUSIC_GATEWAY_QQ_URL || '',
+    musicGatewayNc: process.env.MUSIC_GATEWAY_NC_URL || '',
     sentry: {
       dsn: process.env.SENTRY_DSN || backendSentryDsnDefault,
       environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
@@ -608,6 +611,8 @@ export default defineNuxtConfig({
       siteLogo,
       siteDescription,
       isNetlify: process.env.NETLIFY === 'true',
+      // 自建音乐网关请求令牌（前端携带，代理校验用；不配置则不校验）
+      musicGatewayToken: process.env.NUXT_PUBLIC_MUSIC_GATEWAY_TOKEN || '',
       sentry: {
         dsn: process.env.NUXT_PUBLIC_SENTRY_DSN || frontendSentryDsnDefault,
         environment:
