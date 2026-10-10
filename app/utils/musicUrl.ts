@@ -8,7 +8,6 @@ import { isPlaybackUrlInvalid } from '~/utils/invalidPlaybackUrls'
 import { persistQqMusicCookie } from '~/utils/qqCookie'
 import { resolvePluginUrl } from '~/utils/pluginResolver'
 import { useServerErrors } from '~/composables/useLocaleText'
-
 /**
  * 动态获取音乐播放URL
  * @param platform 音乐平台 ('netease' | 'tencent')
@@ -27,7 +26,6 @@ export type MusicUrlResolveOptions = {
   songId?: number
   selectionToken?: string
 }
-
 /**
  * 歌曲元信息
  */
@@ -38,16 +36,13 @@ export type MusicTrackMeta = {
   // 原始搜索结果或 DB 记录；插件音源的 getMediaSource 可能依赖搜索期的平台特有字段
   rawItem?: unknown
 }
-
 export type MusicUrlResolveResult = {
   url: string | null
   source?: string
   normalizedMusicId?: string
   idType?: string
 }
-
 export const INVALID_QQ_AUDIO_URL_SUFFIX = '/2149972737147268278.mp3'
-
 // 星海音源（咪咕备用通道）：由国内服务器代理获取链接，规避咪咕对海外 IP 的屏蔽
 const XINGHAI_BASE_URL = 'https://yy.zddyr.top/lx/api/'
 // 星海播放链接缓存（10 分钟），规避星海后端每分钟 10 次的限流
@@ -60,7 +55,6 @@ const xinghaiUrlCache = new Map<string, { url: string; expireAt: number }>()
 const xinghaiInflight = new Map<string, Promise<string | null>>()
 // 最近请求时间戳（滑动窗口限流）
 const xinghaiRequestTimes: number[] = []
-
 /**
  * 通过星海音源获取咪咕播放链接
  */
@@ -104,7 +98,6 @@ const miguQuality = {
     return base
   }
 }
-
 /**
  * HEAD 探测链接可用性；跨域受限或网络异常时保守视为可用，避免误降级
  */
@@ -116,7 +109,6 @@ async function isMiguUrlAvailable(url: string): Promise<boolean> {
     return true
   }
 }
-
 const fetchXinghaiMiguUrl = async (
   contentId: string,
   meta?: MusicTrackMeta,
@@ -128,7 +120,6 @@ const fetchXinghaiMiguUrl = async (
   if (cached && cached.expireAt > Date.now()) {
     return cached.url
   }
-
   // 清理过期缓存条目，避免无界增长
   const now = Date.now()
   for (const [key, entry] of xinghaiUrlCache) {
@@ -136,13 +127,11 @@ const fetchXinghaiMiguUrl = async (
       xinghaiUrlCache.delete(key)
     }
   }
-
   // 并发合并：同一歌曲的并发请求只发一次
   const inflight = xinghaiInflight.get(cacheKey)
   if (inflight) {
     return inflight
   }
-
   // 滑动窗口限流：超限时直接失败，避免触发星海 429
   const windowStart = now - XINGHAI_RATE_LIMIT_WINDOW
   while (xinghaiRequestTimes.length > 0 && xinghaiRequestTimes[0] < windowStart) {
@@ -152,7 +141,6 @@ const fetchXinghaiMiguUrl = async (
     console.warn('[musicUrl] 星海音源请求过于频繁，跳过本次请求')
     return null
   }
-
   const promise = (async (): Promise<string | null> => {
     try {
       xinghaiRequestTimes.push(Date.now())
@@ -164,14 +152,12 @@ const fetchXinghaiMiguUrl = async (
       if (meta?.name) params.name = meta.name
       if (meta?.artist) params.singer = meta.artist
       if (meta?.album) params.albumName = meta.album
-
       const query = Object.entries(params)
         .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
         .join('&')
       const response: any = await $fetch(`${XINGHAI_BASE_URL}?${query}`, {
         timeout: 8000
       })
-
       if (response?.code === 200 && response?.url) {
         let url = await miguQuality.resolveAvailableUrl(response.url.split('?')[0], miguFlag || 1)
         if (url.startsWith('http://')) {
@@ -185,29 +171,24 @@ const fetchXinghaiMiguUrl = async (
     }
     return null
   })()
-
   xinghaiInflight.set(cacheKey, promise)
   promise.finally(() => {
     xinghaiInflight.delete(cacheKey)
   })
   return promise
 }
-
 const musicUrlSourceCache = new Map<string, string>()
 // 每次解析都会产生新地址（插件代理票据各不相同），需设上限否则长时间播放会无界增长
 const MUSIC_URL_SOURCE_CACHE_SIZE = 200
-
 const normalizeCacheUrl = (url: string) => {
   return url.trim().replace(/^http:\/\//, 'https://')
 }
-
 export const isKnownInvalidQqAudioUrl = (url: string | null | undefined) => {
   if (!url) return false
   const normalizedUrl = normalizeCacheUrl(url)
   const urlWithoutParams = normalizedUrl.split('?')[0].split('#')[0]
   return urlWithoutParams.endsWith(INVALID_QQ_AUDIO_URL_SUFFIX)
 }
-
 /** 接受一个解析结果：播放端已确认无效的地址直接丢弃，让链路继续尝试其它来源 */
 const acceptResult = (url: string, source: string): MusicUrlResolveResult | null => {
   if (isPlaybackUrlInvalid(url)) {
@@ -217,7 +198,6 @@ const acceptResult = (url: string, source: string): MusicUrlResolveResult | null
   rememberMusicUrlSource(url, source)
   return { url, source }
 }
-
 const rememberMusicUrlSource = (url: string | null | undefined, source?: string) => {
   if (!url || !source) return
   musicUrlSourceCache.set(normalizeCacheUrl(url), source)
@@ -227,11 +207,67 @@ const rememberMusicUrlSource = (url: string | null | undefined, source?: string)
   }
   while (musicUrlSourceCache.size > MUSIC_URL_SOURCE_CACHE_SIZE) musicUrlSourceCache.delete(musicUrlSourceCache.keys().next().value!)
 }
-
 export const getCachedMusicUrlSource = (url: string | null | undefined) => {
   if (!url) return null
   return musicUrlSourceCache.get(normalizeCacheUrl(url)) || null
 }
+
+// ==================== 自建音乐网关（服务端持账号，游客免登录播放） ====================
+// 网关: qq-music-api (http://<MUSIC_GATEWAY_QQ_URL>，默认内网 :3200)
+//       NeteaseCloudMusicApi (http://<MUSIC_GATEWAY_NC_URL>，默认内网 :3000)
+// VoiceHub 内部音质数值 → 网关参数
+const GATEWAY_QQ_SIZE_MAP: Record<number, string> = {
+  4: '128',
+  8: '320',
+  10: 'flac',
+  11: 'hires',
+  14: 'master'
+}
+const GATEWAY_NC_LEVEL_MAP: Record<number, string> = {
+  2: 'standard',
+  4: 'exhigh',
+  5: 'lossless',
+  6: 'hires',
+  9: 'jymaster'
+}
+/**
+ * 通过自建网关获取播放链接（服务端持 QQ/网易账号，游客无需任何登录态）
+ * @returns 播放 URL 结果；网关未配置/请求失败均返回 null（走原有回退链）
+ */
+const tryMusicGateway = async (
+  gateway: 'qq' | 'nc',
+  musicId: string | number,
+  quality: number | string
+): Promise<MusicUrlResolveResult | null> => {
+  try {
+    const numQuality = Number(quality)
+    let gatewayToken = ''
+    try {
+      gatewayToken = (useRuntimeConfig().public as any)?.musicGatewayToken || ''
+    } catch {
+      // SSR/客户端个别环境未初始化 runtimeConfig 时忽略，不携带 token
+    }
+    const headers = gatewayToken ? { 'x-gateway-token': gatewayToken } : {}
+    let params: Record<string, string>
+    if (gateway === 'qq') {
+      params = { mid: String(musicId), quality: GATEWAY_QQ_SIZE_MAP[numQuality] || '320' }
+    } else {
+      params = { id: String(musicId), level: GATEWAY_NC_LEVEL_MAP[numQuality] || 'exhigh' }
+    }
+    const response: any = await $fetch(`/api/music/gateway/${gateway}`, {
+      params,
+      headers,
+      timeout: 12000
+    })
+    if (response?.success && response?.url) {
+      return acceptResult(response.url, response.source || `gateway-${gateway}`)
+    }
+  } catch (error: any) {
+    console.warn(`[musicUrl] 音乐网关(${gateway})解析失败，继续回退链:`, error?.message || error)
+  }
+  return null
+}
+// ====================================================================================
 
 export async function getMusicUrlResult(
   platform: string,
@@ -246,7 +282,6 @@ export async function getMusicUrlResult(
       source: 'play-url'
     }
   }
-
   // 如果没有playUrl，但platform或musicId为空或无效，则无法获取播放链接
   if (
     !platform ||
@@ -258,13 +293,10 @@ export async function getMusicUrlResult(
   ) {
     throw new Error('缺少音乐平台或音乐ID信息')
   }
-
   const { getQuality } = useAudioQuality()
   const { getChkszMusicUrl, hasChkszKey } = useChkszSource()
-
   // 优先使用 options 中的 quality，否则使用全局设置
   const quality = options?.quality !== undefined ? options.quality : getQuality(platform)
-
   // ChKSz 音源（用户自配 apikey）：非 VIP 登录态下最优先，VIP 登录态下官方链路之后的次优先
   const isExcluded = (source: string) => (options?.excludeSources || []).includes(source)
   const tryChksz = async (chkszQuality: number | string): Promise<MusicUrlResolveResult | null> => {
@@ -277,7 +309,6 @@ export async function getMusicUrlResult(
     }
     return null
   }
-
   if (isPluginPlatform(platform)) {
     const result = await resolvePluginUrl(platform, musicId, quality, options)
     if (result?.url) {
@@ -291,7 +322,6 @@ export async function getMusicUrlResult(
     resolveError.data = { code: 'PLUGIN_RESOLVE_FAILED' }
     throw resolveError
   }
-
   const tryPlugins = async () => {
     try {
       const result = await resolvePluginUrl(platform, musicId, quality, options)
@@ -299,7 +329,6 @@ export async function getMusicUrlResult(
     } catch (error) { console.warn('[musicUrl] 插件解析阶段失败', error) }
     return null
   }
-
   if (platform === 'tencent') {
     const normalizedQuality = Number(quality)
     const qualityCandidates = [Number.isNaN(normalizedQuality) ? 8 : normalizedQuality]
@@ -327,10 +356,8 @@ export async function getMusicUrlResult(
           strategy
         }
       })
-
       // 服务端可能已用 refresh_token 续期，落盘新 Cookie 供后续请求复用
       if (response?.cookie) persistQqMusicCookie(response.cookie)
-
       if (response?.success && response?.url) {
         if (platform === 'tencent' && qqMusicCookie && response.authUsed === false) {
           console.warn('[musicUrl] 已检测到 QQ 音乐本地登录态，但后端解析未使用登录 Cookie')
@@ -343,10 +370,13 @@ export async function getMusicUrlResult(
           idType: response.idType
         }
       }
-
       throw new Error(response?.message || 'QQ音乐播放链接解析失败')
     }
-
+    // 自建音乐网关（服务端持账号）：游客/登录用户均优先尝试，失败自动回退到原有链路
+    const gatewayResult = await tryMusicGateway('qq', musicId, quality)
+    if (gatewayResult) {
+      return gatewayResult
+    }
     // VIP 登录态：优先后端用用户 Cookie 走官方链路换取直链，失败再降级第三方音源
     if (qqMusicCookie && isQqVip && !excludedSources.has('qq-official')) {
       try {
@@ -355,16 +385,13 @@ export async function getMusicUrlResult(
         console.warn('[musicUrl] QQ 官方登录态解析失败，降级第三方音源:', error?.message || error)
       }
     }
-
     // ChKSz 音源：VIP 官方之后的次优先，非 VIP/未登录时为最优先
     const chkszResult = await tryChksz(qualityCandidates[0])
     if (chkszResult) {
       return chkszResult
     }
-
     const pluginResult = await tryPlugins()
     if (pluginResult) return pluginResult
-
     // K×H 音源提取的 QQ 直连接口支持浏览器跨域，优先于 vkeys 使用。
     if (!excludedSources.has('ygking-qq')) {
       const ygkingQuality: Record<number, string> = {
@@ -390,7 +417,6 @@ export async function getMusicUrlResult(
         // 继续尝试后端 HYW 与 vkeys。
       }
     }
-
     if (!excludedSources.has('hyw-tx')) {
       try {
         return await requestBackendResolve()
@@ -398,7 +424,6 @@ export async function getMusicUrlResult(
         console.warn('[musicUrl] HYW 后端解析失败，继续尝试 vkeys 音源:', error?.message || error)
       }
     }
-
     // v3 负责探测歌曲支持的音质，播放链接仍由 v2 获取。
     if (!excludedSources.has('vkeys-v3') && !excludedSources.has('vkeys')) {
       try {
@@ -431,12 +456,10 @@ export async function getMusicUrlResult(
         // v3 失败后继续尝试 v2。
       }
     }
-
     if (!excludedSources.has('vkeys')) {
       for (const candidateQuality of qualityCandidates) {
         const idParam = getVkeysIdParam('tencent', musicId)
         const vkeysUrl = `https://api.vkeys.cn/v2/music/tencent?${idParam.key}=${encodeURIComponent(idParam.value)}&quality=${candidateQuality}`
-
         try {
           const vkeysResp = await fetch(vkeysUrl, {
             headers: {
@@ -444,7 +467,6 @@ export async function getMusicUrlResult(
             },
             signal: AbortSignal.timeout(5000)
           })
-
           if (vkeysResp.ok) {
             const data = await vkeysResp.json()
             if (data.code === 200 && data.data && data.data.url) {
@@ -467,7 +489,6 @@ export async function getMusicUrlResult(
         }
       }
     }
-
     // 非 VIP 登录态：官方链路作为最后兜底
     if (qqMusicCookie && !isQqVip && !excludedSources.has('qq-official')) {
       try {
@@ -476,10 +497,8 @@ export async function getMusicUrlResult(
         console.warn('[musicUrl] QQ 官方链路兜底失败:', error?.message || error)
       }
     }
-
     throw new Error('QQ音乐播放链接解析失败')
   }
-
   const { getSongUrl } = useMusicSources()
   const isNeteasePlatform = platform === 'netease' || platform === 'netease-podcast'
   const hasNeteaseLogin =
@@ -492,22 +511,25 @@ export async function getMusicUrlResult(
     typeof window !== 'undefined' &&
     window.localStorage.getItem('netease_vip') === '1'
   const neteaseOfficialFirst = hasNeteaseLogin && isNeteaseVip
-
+  // 自建音乐网关（服务端持账号）：游客/登录用户均优先尝试，失败自动回退到原有链路
+  if (isNeteasePlatform) {
+    const gatewayResult = await tryMusicGateway('nc', musicId, quality)
+    if (gatewayResult) {
+      return gatewayResult
+    }
+  }
   let finalMusicId = musicId
   let bilibiliCid: string | undefined
-
   if (platform === 'bilibili') {
     const parsed = parseBilibiliId(musicId)
     finalMusicId = parsed.bvid
     bilibiliCid = parsed.cid
   }
-
   const extendedOptions = {
     ...options,
     bilibiliCid,
     excludeSources: options?.excludeSources
   }
-
   // 非 VIP 登录态/未登录：ChKSz 音源最优先
   if (isNeteasePlatform && !neteaseOfficialFirst) {
     const chkszResult = await tryChksz(quality)
@@ -515,24 +537,20 @@ export async function getMusicUrlResult(
       return chkszResult
     }
   }
-
   if (platform !== 'bilibili' && !neteaseOfficialFirst) {
     const pluginResult = await tryPlugins()
     if (pluginResult) return pluginResult
   }
-
   // 先使用统一组件的音源选择逻辑
   const backupResult = await getSongUrl(finalMusicId, quality, platform, undefined, extendedOptions)
   if (backupResult.success && backupResult.url) {
     const accepted = acceptResult(backupResult.url, backupResult.source || 'music-source')
     if (accepted) return accepted
   }
-
   if (neteaseOfficialFirst) {
     const pluginResult = await tryPlugins()
     if (pluginResult) return pluginResult
   }
-
   // VIP 登录态官方链路失败：ChKSz 作为次优先
   if (isNeteasePlatform && neteaseOfficialFirst) {
     const chkszResult = await tryChksz(quality)
@@ -540,12 +558,10 @@ export async function getMusicUrlResult(
       return chkszResult
     }
   }
-
   // 如果是 Bilibili 平台，且 getSongUrl 失败，则直接抛出错误
   if (platform === 'bilibili') {
     throw new Error(backupResult.error || '获取哔哩哔哩播放链接失败')
   }
-
   // 回退到 vkeys
   const normalizedQuality = Number(quality)
   const qualityCandidates = isNeteasePlatform
@@ -553,7 +569,6 @@ export async function getMusicUrlResult(
       ? [...new Set([normalizedQuality, 4])]
       : [Number.isNaN(normalizedQuality) ? 0 : normalizedQuality]
     : [Number.isNaN(normalizedQuality) ? 8 : normalizedQuality]
-
   const endpoint =
     platform === 'netease' || platform === 'netease-podcast'
       ? 'netease'
@@ -562,11 +577,9 @@ export async function getMusicUrlResult(
         : platform === 'migu'
           ? 'migu'
           : null
-
   if (!endpoint) {
     throw new Error('不支持的音乐平台')
   }
-
   // 咪咕音乐特殊处理
   if (platform === 'migu') {
     // 服务器位于海外时直接使用星海音源（咪咕官方接口屏蔽海外 IP）
@@ -585,7 +598,6 @@ export async function getMusicUrlResult(
       }
       throw new Error('咪咕音乐播放链接获取失败（星海音源不可用）')
     }
-
     try {
       // 服务端以 PQ 取链后按 toneFlag 升级音质路径，客户端不再二次处理
       const miguResponse: any = await $fetch('/api/native-api/migu/playurl', {
@@ -595,7 +607,6 @@ export async function getMusicUrlResult(
         },
         timeout: 10000
       })
-
       if (miguResponse?.success && miguResponse?.url) {
         let miguUrl = miguResponse.url
         // 与星海分支保持一致，避免 http 链接在 https 部署下被混合内容策略拦截
@@ -611,7 +622,6 @@ export async function getMusicUrlResult(
     } catch (error) {
       console.error('[musicUrl] 咪咕播放链接获取失败:', error)
     }
-
     // 官方接口失败时回退星海音源
     const xinghaiUrl = await fetchXinghaiMiguUrl(String(musicId), options?.musicInfo, quality)
     if (xinghaiUrl) {
@@ -620,7 +630,6 @@ export async function getMusicUrlResult(
     }
     throw new Error('咪咕音乐播放链接获取失败')
   }
-
   for (const candidateQuality of qualityCandidates) {
     const idParam = getVkeysIdParam(endpoint as 'netease' | 'tencent', musicId)
     const apiUrl = `https://api.vkeys.cn/v2/music/${endpoint}?${idParam.key}=${encodeURIComponent(idParam.value)}&quality=${candidateQuality}`
@@ -631,11 +640,9 @@ export async function getMusicUrlResult(
       },
       signal: AbortSignal.timeout(5000)
     })
-
     if (!response.ok) {
       continue
     }
-
     const data = await response.json()
     if (data.code === 200 && data.data && data.data.url) {
       // 将HTTP URL改为HTTPS
@@ -651,11 +658,9 @@ export async function getMusicUrlResult(
       continue
     }
   }
-
   // vkeys API返回了响应但没有有效的播放链接
   throw new Error('vkeys API返回的播放链接无效')
 }
-
 export async function getMusicUrl(
   platform: string,
   musicId: string | number,
